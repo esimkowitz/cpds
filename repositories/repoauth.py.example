@@ -1,2 +1,1 @@
-_user = "cse330"
-_password = "[REPLACEME]"
+_token = "[REPLACE WITH ACCESS TOKEN FROM GITHUB]"
