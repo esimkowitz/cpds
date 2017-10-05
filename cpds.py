@@ -1,19 +1,20 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
+import concurrent.futures
 import json
 import os
 import re
+import shutil
 import subprocess
-import traceback
 import sys
-import requests
+import tempfile
 import time
-import shutil, tempfile
-import concurrent.futures
-from threading import Thread
-from multiprocessing import Queue
-from multiprocessing import Lock
+import traceback
+from multiprocessing import Lock, Queue
 from pprint import pprint
+from threading import Thread
+
+import requests
 from lxml import html
 
 # Threads waiting to process
@@ -21,42 +22,44 @@ processing_queue = Queue(5000)
 processing_finished = False
 print_lock = Lock()
 
-## Grab a URL from a moss call
-## Regex Source:
-##
-## http://stackoverflow.com/questions/6883049/
-##      regex-to-find-urls-in-string-in-python
+
 def get_url(response):
-    urls = \
-        re.findall("""http[s]?://(?:[a-zA-Z]|
+    """
+    Grab a URL from a moss call
+    Regex Source:
+    http://stackoverflow.com/questions/6883049/regex-to-find-urls-in-string-in-python
+    """
+    urls = re.findall(r"""http[s]?://(?:[a-zA-Z]|
             [0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F]
-            [0-9a-fA-F]))+"""
-                   , response)
-    if len(urls) > 0:
+            [0-9a-fA-F]))+""",
+                      response)
+    urls_len = len(urls)
+    if urls_len > 0:
         # Only one URL should be returned
         return urls[0]
     else:
         # No results in URL - bad request
         raise ValueError("No URL")
 
-
-## Get all percentages from a moss URL
 def get_percentages(url):
+    """Get all percentages from a moss URL"""
     # Get page content
     page = requests.get(url)
     content = page.content
-    # Find percent in content 
+    # Find percent in content
     percentages = re.findall('[0-9]+%', content)
     return percentages
 
 
-## Scrape a moss URL to find the highest percentage match
+
 def get_high_percentages(url, cutoff):
+    """Scrape a moss URL to find the highest percentage match"""
     # No high values by default
     high_score = False
     percentages = get_percentages(url)
     # Search through resulting percentages for values past cutoff
-    if len(percentages) > 0:
+    percentages_len = len(percentages)
+    if percentages_len > 0:
         for score in percentages:
             score = int(score.strip('%'))
             if score > cutoff:
@@ -65,8 +68,9 @@ def get_high_percentages(url, cutoff):
     return high_score
 
 
-## Process queue
+
 def process_queue():
+    """Process queue"""
     global processing_finished
     global processing_queue
 
@@ -84,8 +88,8 @@ def process_queue():
         print traceback.format_exc()
         raise
 
-## See if two files should be compared. Compare them if they are
 def compare_files(_old, _new, output_filename):
+    """See if two files should be compared. Compare them if they are"""
     global print_lock
     global processing_queue
 
@@ -103,8 +107,9 @@ def compare_files(_old, _new, output_filename):
             for filename in filenames:
                 if filename.endswith(('.php', '.js', '.css', '.html', '.py', '.txt')):
                     new_matches.append(os.path.join(root, filename))
-
-        if (len(old_matches) < 1 or len(new_matches) < 1):
+        old_matches_len = len(old_matches)
+        new_matches_len = len(new_matches)
+        if (old_matches_len < 1 or new_matches_len < 1):
             return
 
         # Make temporary directory for files.
@@ -125,7 +130,8 @@ def compare_files(_old, _new, output_filename):
 
 
         # Call MOSS from command line
-        response = subprocess.check_output("moss/moss -d " + str(old_files) + " " +str(new_files), shell=True)
+        response = subprocess.check_output("moss/moss -d " + str(old_files)
+                                           + " " +str(new_files), shell=True)
         # Get response from command
 
         # TODO: Add error handling
@@ -156,12 +162,11 @@ def compare_files(_old, _new, output_filename):
             print_lock.release()
     except Exception:
         print traceback.format_exc()
-        pass
     return
 
 
-## Send moss request
 def moss_compare(new_dirs, old_dirs):
+    """Send moss request"""
     global processing_queue
     global processing_finished
 
@@ -173,10 +178,10 @@ def moss_compare(new_dirs, old_dirs):
         # For loop: m * n filepaths
         for _new in new_dirs:
             for _old in old_dirs:
-                if (_new != _old):
+                if _new != _old:
                     processing_queue.put({"new_file": _new,
-                        "old_file": _old,
-                        "output_filename": output_filename})
+                                          "old_file": _old,
+                                          "output_filename": output_filename})
 
         print "Queue populated. Approximately " + str(processing_queue.qsize()) + " in queue"
 
@@ -184,29 +189,30 @@ def moss_compare(new_dirs, old_dirs):
             "finished_processing": True
         })
 
-        while (True):
+        while True:
             row = processing_queue.get()
 
-            if (row.has_key("finished_processing")):
+            if row.has_key("finished_processing"):
                 print "Finished processing."
                 break
             else:
                 compare_files(row["new_file"], row["old_file"], row["output_filename"])
 
-    except KeyboardInterrupt as e:
+    except KeyboardInterrupt:
         print "cancelled"
         processing_finished = True
         sys.exit(0)
 
 
-## Grab file extension
+
 def get_extension(file_path):
+    """Grab file extension"""
     extension = os.path.splitext(file_path)[1]
     return extension
 
 
-## Return files with matched name
 def walk(substring):
+    """Return files with matched name"""
     matched_files = []
     _dir = os.getcwd() + '/repositories'
 
@@ -218,8 +224,9 @@ def walk(substring):
     return matched_files
 
 
-## Usage
-def printUsage():
+
+def print_usage():
+    """Usage"""
     print 'USAGE:'
     print 'python file-walker.py [new modules] [old modules]'
     print "  Grab files whose full path contains the given substring, such as 'spring2015-module1'"
@@ -228,13 +235,11 @@ def printUsage():
 ## MAIN
 if __name__ == '__main__':
     if len(sys.argv) > 2:
-        old_files = walk(sys.argv[1])
-        print 'Grabbed ' + str(len(old_files)) + ' old directories'
+        OLD_FILES = walk(sys.argv[1])
+        print 'Grabbed ' + str(len(OLD_FILES)) + ' old directories'
 
-        new_files = walk(sys.argv[2])
-        print 'Grabbed ' + str(len(new_files)) + ' new directories'
-        moss_compare(new_files, old_files)
+        NEW_FILES = walk(sys.argv[2])
+        print 'Grabbed ' + str(len(NEW_FILES)) + ' new directories'
+        moss_compare(NEW_FILES, OLD_FILES)
     else:
-        printUsage()
-
-      
+        print_usage()
