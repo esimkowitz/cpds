@@ -1,4 +1,4 @@
-# Code Plagiarism Detection Script
+# CSE 132 Code Plagiarism Detection Scripts
 
 Created for CSE 132 at Washington University in St. Louis. This will pull repositories from a Github organization and send files to MOSS.
 
